@@ -331,25 +331,6 @@ class PrecioBot(commands.Bot):
 
 
     # ========================================================
-    # LOG DE MENSAJES
-    # ========================================================
-    #
-    # IMPORTANTE:
-    # Usamos listen() en lugar de sobrescribir event_message().
-    # Así TwitchIO puede seguir procesando automáticamente
-    # los comandos registrados con @commands.command().
-    #
-
-    @commands.Bot.listen()
-    async def event_message(self, message):
-
-        print(
-            "MENSAJE RECIBIDO:",
-            message.text
-        )
-
-
-    # ========================================================
     # COMANDO !PRECIO
     # ========================================================
 
@@ -360,54 +341,81 @@ class PrecioBot(commands.Bot):
     ):
 
         print(
+            "================================"
+        )
+
+        print(
             "COMANDO PRECIO RECIBIDO"
         )
 
-        if ctx.message is None:
+        try:
+
+            contenido = ctx.message.content
 
             print(
-                "ERROR: el mensaje del contexto es None."
+                f"Contenido: {contenido}"
             )
 
-            return
+            partes = contenido.split(
+                maxsplit=1
+            )
 
-        contenido = ctx.message.content
+            if len(partes) < 2:
 
-        print(
-            f"Contenido del comando: "
-            f"{contenido}"
-        )
+                await ctx.send(
+                    "Uso: !precio nombre del jugador"
+                )
 
-        partes = contenido.split(
-            maxsplit=1
-        )
+                return
 
-        if len(partes) < 2:
+            nombre = partes[1].strip()
+
+            print(
+                f"Buscando precio para: "
+                f"{nombre}"
+            )
+
+            resultado = await buscar_precio(
+                nombre
+            )
+
+            print(
+                f"Respuesta para Twitch: "
+                f"{resultado}"
+            )
 
             await ctx.send(
-                "Uso: !precio nombre del jugador"
+                resultado
             )
 
-            return
+            print(
+                "RESPUESTA ENVIADA A TWITCH"
+            )
 
-        nombre = partes[1].strip()
+        except Exception as e:
+
+            print(
+                "ERROR EN COMANDO PRECIO: "
+                f"{type(e).__name__}: {e}"
+            )
+
+            try:
+
+                await ctx.send(
+                    "Ha ocurrido un error "
+                    "al buscar el jugador."
+                )
+
+            except Exception as send_error:
+
+                print(
+                    "ERROR ENVIANDO RESPUESTA: "
+                    f"{type(send_error).__name__}: "
+                    f"{send_error}"
+                )
 
         print(
-            f"Buscando precio para: "
-            f"{nombre}"
-        )
-
-        resultado = await buscar_precio(
-            nombre
-        )
-
-        print(
-            f"Respuesta para Twitch: "
-            f"{resultado}"
-        )
-
-        await ctx.send(
-            resultado
+            "================================"
         )
 
 
