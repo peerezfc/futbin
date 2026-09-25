@@ -330,6 +330,17 @@ class PrecioBot(commands.Bot):
         )
 
 
+    # ========================================================
+    # LOG DE MENSAJES
+    # ========================================================
+    #
+    # IMPORTANTE:
+    # Usamos listen() en lugar de sobrescribir event_message().
+    # Así TwitchIO puede seguir procesando automáticamente
+    # los comandos registrados con @commands.command().
+    #
+
+    @commands.Bot.listen()
     async def event_message(self, message):
 
         print(
@@ -337,12 +348,10 @@ class PrecioBot(commands.Bot):
             message.text
         )
 
-        # TwitchIO 3 procesa los comandos
-        # internamente en Bot.event_message().
-        await super().event_message(
-            message
-        )
 
+    # ========================================================
+    # COMANDO !PRECIO
+    # ========================================================
 
     @commands.command()
     async def precio(
@@ -354,7 +363,20 @@ class PrecioBot(commands.Bot):
             "COMANDO PRECIO RECIBIDO"
         )
 
+        if ctx.message is None:
+
+            print(
+                "ERROR: el mensaje del contexto es None."
+            )
+
+            return
+
         contenido = ctx.message.content
+
+        print(
+            f"Contenido del comando: "
+            f"{contenido}"
+        )
 
         partes = contenido.split(
             maxsplit=1
@@ -389,6 +411,25 @@ class PrecioBot(commands.Bot):
         )
 
 
+    # ========================================================
+    # ERRORES DE COMANDOS
+    # ========================================================
+
+    async def event_command_error(
+        self,
+        payload
+    ):
+
+        print(
+            "ERROR EN COMANDO:"
+        )
+
+        print(
+            f"{type(payload).__name__}: "
+            f"{payload}"
+        )
+
+
 # ============================================================
 # INICIAR TWITCH
 # ============================================================
@@ -410,7 +451,10 @@ async def iniciar_twitch():
             TWITCH_CLIENT_SECRET,
 
         "TWITCH_CHANNEL":
-            TWITCH_CHANNEL
+            TWITCH_CHANNEL,
+
+        "FUT_API_KEY":
+            FUT_API_KEY
 
     }
 
