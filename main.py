@@ -1,47 +1,63 @@
 from fastapi import FastAPI, Query
 from fastapi.responses import PlainTextResponse
 import httpx
-import urllib.parse
+import os
 
 app = FastAPI()
 
-# Cambia el año si es necesario (26 o 27 según el juego actual)
-YEAR = "26"
+PARSE_API_URL = (
+    "https://api.parse.bot/scraper/"
+    "5feab28c-82a9-4579-ae36-9307b1b0711a/search_players_fc27"
+)
+
 
 @app.get("/precio", response_class=PlainTextResponse)
 async def precio(nombre: str = Query(..., min_length=2)):
     try:
-        nombre_limpio = nombre.strip()
-        encoded_name = urllib.parse.quote(nombre_limpio)
+        api_key = os.getenv("FUT_API_KEY")
 
-        url = f"https://www.futbin.org/futbin/api/{YEAR}/searchPlayersByName?playername={encoded_name}&year={YEAR}"
+        if not api_key:
+            return "Error: falta configurar FUT_API_KEY en Railway."
 
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(url, headers={
-                "User-Agent": "Mozilla/5.0"
-            })
-            data = response.json()
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.get(
+                PARSE_API_URL,
+                params={"query": nombre.strip()},
+                headers={
+                    "X-API-Key": api_key
+                }
+            )
 
-        if not data or "data" not in data or len(data["data"]) == 0:
-            return f"No encontré ninguna carta de '{nombre_limpio}'"
+        if response.status_code != 200:
+            return f"Error de la API: HTTP {response.status_code}"
 
-        # Cogemos la primera carta (normalmente la más relevante / alta)
-        player = data["data"][0]
+        data = response.json()
 
-        name = player.get("name", nombre_limpio)
-        rating = player.get("rating", "?")
-        
-        # Precios
-        price_ps = player.get("ps_LCPrice") or player.get("ps_price") or 0
-        price_pc = player.get("pc_LCPrice") or player.get("pc_price") or 0
+        if data.get("status") != "success":
+            return f"No se pudo buscar '{nombre}'."
 
-        # Formato bonito
-        def format_price(p):
-            if not p or p == 0:
-                return "N/A"
-            return f"{int(p):,}".replace(",", ".")
+        results = data.get("data", {}).get("results", [])
 
-        return f"{name} ({rating}) → PS: {format_price(price_ps)} | PC: {format_price(price_pc)}"
+        if not results:
+            return f"No encontré ninguna carta de '{nombre}'."
 
-    except Exception as e:
-        return f"Error al buscar '{nombre}'. Inténtalo de nuevo en unos segundos."
+        respuestas = []
+
+        for player in results:
+            name = player.get("name", nombre)
+            rating = player.get("rating", "?")
+            position = player.get("position", "?")
+            version = player.get("version", "?")
+
+            price_ps = player.get("price_ps", "0")
+            price_pc = player.get("price_pc", "0")
+
+            respuestas.append(
+                f"{name} {rating} {position} [{version}] "
+                f"→ PS: {price_ps} | PC: {price_pc}"
+            )
+
+        return "\n".join(respuestas)
+
+    except Exception:
+        return f"Error al buscar '{nombre}'. Inténtalo de nuevo."
