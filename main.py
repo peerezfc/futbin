@@ -13,11 +13,10 @@ PARSE_API_URL = (
 
 @app.get("/precio", response_class=PlainTextResponse)
 async def precio(nombre: str = Query(..., min_length=2)):
-
     api_key = os.getenv("FUT_API_KEY")
 
     if not api_key:
-        return "ERROR: FUT_API_KEY NO EXISTE EN RAILWAY"
+        return "Error: falta configurar FUT_API_KEY."
 
     try:
         async with httpx.AsyncClient(timeout=20.0) as client:
@@ -30,14 +29,39 @@ async def precio(nombre: str = Query(..., min_length=2)):
                 }
             )
 
-        return (
-            f"HTTP: {response.status_code}\n\n"
-            f"RESPUESTA DE PARSE.BOT:\n\n"
-            f"{response.text[:5000]}"
-        )
+        if response.status_code != 200:
+            return f"Error de la API: HTTP {response.status_code}"
 
-    except httpx.RequestError as e:
-        return f"ERROR DE CONEXIÓN: {type(e).__name__}: {str(e)}"
+        data = response.json()
 
-    except Exception as e:
-        return f"ERROR: {type(e).__name__}: {str(e)}"
+        if data.get("status") != "success":
+            return f"No se pudo buscar '{nombre}'."
+
+        results = data.get("data", {}).get("results", [])
+
+        if not results:
+            return f"No encontré ninguna carta de '{nombre}'."
+
+        # Mostramos las cartas encontradas
+        respuestas = []
+
+        for player in results:
+            name = player.get("name", "?")
+            rating = player.get("rating", "?")
+            position = player.get("position", "?")
+            version = player.get("version", "?")
+            price_ps = player.get("price_ps", "0")
+            price_pc = player.get("price_pc", "0")
+
+            respuestas.append(
+                f"{name} ({rating}) {position} [{version}] "
+                f"→ PS: {price_ps} | PC: {price_pc}"
+            )
+
+        return "\n".join(respuestas)
+
+    except httpx.RequestError:
+        return "Error de conexión con la API de FUT."
+
+    except Exception:
+        return f"Error al buscar '{nombre}'."
