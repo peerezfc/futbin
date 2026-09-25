@@ -5,15 +5,21 @@ import httpx
 from fastapi import FastAPI, Query
 from fastapi.responses import PlainTextResponse
 
+import twitchio
 from twitchio.ext import commands
+from twitchio import eventsub
 
 
-# =========================
-# CONFIGURACIÓN
-# =========================
+# ============================================================
+# VARIABLES
+# ============================================================
 
-TWITCH_TOKEN = os.getenv("TWITCH_ACCESS_TOKEN")
+TWITCH_CLIENT_ID = os.getenv("TWITCH_CLIENT_ID")
+TWITCH_CLIENT_SECRET = os.getenv("TWITCH_CLIENT_SECRET")
+TWITCH_ACCESS_TOKEN = os.getenv("TWITCH_ACCESS_TOKEN")
+TWITCH_REFRESH_TOKEN = os.getenv("TWITCH_REFRESH_TOKEN")
 TWITCH_CHANNEL = os.getenv("TWITCH_CHANNEL")
+
 FUT_API_KEY = os.getenv("FUT_API_KEY")
 
 PARSE_API_URL = (
@@ -23,16 +29,11 @@ PARSE_API_URL = (
 )
 
 
-# =========================
+# ============================================================
 # FASTAPI
-# =========================
+# ============================================================
 
 app = FastAPI()
-
-
-@app.get("/precio", response_class=PlainTextResponse)
-async def precio(nombre: str = Query(..., min_length=2)):
-    return await buscar_precio(nombre)
 
 
 async def buscar_precio(nombre: str):
@@ -63,7 +64,6 @@ async def buscar_precio(nombre: str):
         if not results:
             return f"No encontré ninguna carta de '{nombre}'."
 
-        # Primer resultado: normalmente es la coincidencia principal
         player = results[0]
 
         name = player.get("name", nombre)
@@ -85,26 +85,97 @@ async def buscar_precio(nombre: str):
         return f"Error al buscar '{nombre}'."
 
 
-# =========================
-# TWITCH BOT
-# =========================
+@app.get("/precio", response_class=PlainTextResponse)
+async def precio(nombre: str = Query(..., min_length=2)):
+    return await buscar_precio(nombre)
+
+
+# ============================================================
+# OBTENER ID DEL USUARIO DE TWITCH
+# ============================================================
+
+async def obtener_usuario_twitch():
+    if not TWITCH_ACCESS_TOKEN or not TWITCH_CLIENT_ID:
+        raise RuntimeError(
+            "Faltan TWITCH_ACCESS_TOKEN o TWITCH_CLIENT_ID."
+        )
+
+    token = TWITCH_ACCESS_TOKEN.replace("oauth:", "")
+
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        response = await client.get(
+            "https://id.twitch.tv/oauth2/validate",
+            headers={
+                "Authorization": f"OAuth {token}"
+            }
+        )
+
+    if response.status_code != 200:
+        raise RuntimeError(
+            f"Token de Twitch inválido: HTTP {response.status_code}"
+        )
+
+    data = response.json()
+
+    return data["user_id"], data.get("login")
+
+
+# ============================================================
+# BOT DE TWITCH
+# ============================================================
 
 class PrecioBot(commands.Bot):
 
-    def __init__(self):
+    def __init__(self, bot_id: str):
         super().__init__(
-            token=TWITCH_TOKEN,
-            prefix="!",
-            initial_channels=[TWITCH_CHANNEL]
+            client_id=TWITCH_CLIENT_ID,
+            client_secret=TWITCH_CLIENT_SECRET,
+            bot_id=bot_id,
+            prefix="!"
         )
 
+    async def setup_hook(self):
+        print("Configurando conexión de Twitch...")
+
+        # Buscar el ID del canal
+        canales = [channel async for channel in self.fetch_channels(
+            logins=[TWITCH_CHANNEL]
+        )]
+
+        if not canales:
+            raise RuntimeError(
+                f"No encontré el canal de Twitch: {TWITCH_CHANNEL}"
+            )
+
+        broadcaster_id = canales[0].id
+
+        print(f"Canal encontrado: {TWITCH_CHANNEL}")
+        print(f"Broadcaster ID: {broadcaster_id}")
+        print(f"Bot ID: {self.bot_id}")
+
+        # Suscripción al chat mediante EventSub
+        payload = eventsub.ChatMessageSubscription(
+            broadcaster_user_id=broadcaster_id,
+            user_id=self.bot_id
+        )
+
+        await self.subscribe_websocket(payload=payload)
+
+        print("Suscripción al chat creada.")
+
+
     async def event_ready(self):
-        print(f"Bot conectado como: {self.nick}")
+        print("===================================")
+        print("BOT DE TWITCH CONECTADO")
         print(f"Canal: {TWITCH_CHANNEL}")
+        print("===================================")
+
 
     @commands.command()
     async def precio(self, ctx: commands.Context):
+        # Ejemplo:
         # !precio Haaland
+
         partes = ctx.message.content.split(maxsplit=1)
 
         if len(partes) < 2:
@@ -120,23 +191,61 @@ class PrecioBot(commands.Bot):
         await ctx.send(resultado)
 
 
+# ============================================================
+# ARRANCAR TWITCH
+# ============================================================
+
 async def iniciar_twitch():
-    if not TWITCH_TOKEN:
+
+    if not TWITCH_ACCESS_TOKEN:
         print("ERROR: falta TWITCH_ACCESS_TOKEN")
+        return
+
+    if not TWITCH_REFRESH_TOKEN:
+        print("ERROR: falta TWITCH_REFRESH_TOKEN")
+        return
+
+    if not TWITCH_CLIENT_ID:
+        print("ERROR: falta TWITCH_CLIENT_ID")
+        return
+
+    if not TWITCH_CLIENT_SECRET:
+        print("ERROR: falta TWITCH_CLIENT_SECRET")
         return
 
     if not TWITCH_CHANNEL:
         print("ERROR: falta TWITCH_CHANNEL")
         return
 
-    bot = PrecioBot()
-    await bot.start()
+    try:
+        bot_id, login = await obtener_usuario_twitch()
+
+        print(f"Usuario asociado al token: {login}")
+        print(f"ID del usuario: {bot_id}")
+
+        bot = PrecioBot(bot_id)
+
+        # Añadir el token de usuario para que TwitchIO
+        # pueda gestionar autenticación y renovación.
+        await bot.add_token(
+            TWITCH_ACCESS_TOKEN,
+            TWITCH_REFRESH_TOKEN
+        )
+
+        await bot.start(load_tokens=False)
+
+    except Exception as e:
+        print(
+            f"ERROR AL CONECTAR TWITCH: "
+            f"{type(e).__name__}: {e}"
+        )
 
 
-# =========================
-# ARRANQUE
-# =========================
+# ============================================================
+# STARTUP
+# ============================================================
 
 @app.on_event("startup")
 async def startup_event():
     asyncio.create_task(iniciar_twitch())
+    
