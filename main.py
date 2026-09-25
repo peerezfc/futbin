@@ -13,13 +13,13 @@ PARSE_API_URL = (
 
 @app.get("/precio", response_class=PlainTextResponse)
 async def precio(nombre: str = Query(..., min_length=2)):
+    api_key = os.getenv("FUT_API_KEY")
+
+    if not api_key:
+        return "ERROR: Railway no encuentra la variable FUT_API_KEY."
+
     try:
-        api_key = os.getenv("FUT_API_KEY")
-
-        if not api_key:
-            return "Error: falta configurar FUT_API_KEY en Railway."
-
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        async with httpx.AsyncClient(timeout=20.0) as client:
             response = await client.get(
                 PARSE_API_URL,
                 params={"query": nombre.strip()},
@@ -29,12 +29,12 @@ async def precio(nombre: str = Query(..., min_length=2)):
             )
 
         if response.status_code != 200:
-            return f"Error de la API: HTTP {response.status_code}"
+            return (
+                f"ERROR API: HTTP {response.status_code}\n"
+                f"Respuesta: {response.text[:500]}"
+            )
 
         data = response.json()
-
-        if data.get("status") != "success":
-            return f"No se pudo buscar '{nombre}'."
 
         results = data.get("data", {}).get("results", [])
 
@@ -44,20 +44,19 @@ async def precio(nombre: str = Query(..., min_length=2)):
         respuestas = []
 
         for player in results:
-            name = player.get("name", nombre)
-            rating = player.get("rating", "?")
-            position = player.get("position", "?")
-            version = player.get("version", "?")
-
-            price_ps = player.get("price_ps", "0")
-            price_pc = player.get("price_pc", "0")
-
             respuestas.append(
-                f"{name} {rating} {position} [{version}] "
-                f"→ PS: {price_ps} | PC: {price_pc}"
+                f"{player.get('name', '?')} "
+                f"({player.get('rating', '?')}) "
+                f"{player.get('position', '?')} "
+                f"[{player.get('version', '?')}] → "
+                f"PS: {player.get('price_ps', '0')} | "
+                f"PC: {player.get('price_pc', '0')}"
             )
 
         return "\n".join(respuestas)
 
-    except Exception:
-        return f"Error al buscar '{nombre}'. Inténtalo de nuevo."
+    except httpx.RequestError as e:
+        return f"ERROR DE CONEXIÓN: {type(e).__name__}: {str(e)}"
+
+    except Exception as e:
+        return f"ERROR INTERNO: {type(e).__name__}: {str(e)}"
