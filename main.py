@@ -131,13 +131,11 @@ async def buscar_precio(nombre: str):
             "0"
         )
 
-        resultado = (
+        return (
             f"{name} ({rating}) "
             f"{position} [{version}] "
             f"→ PS: {price_ps} | PC: {price_pc}"
         )
-
-        return resultado
 
     except httpx.RequestError as e:
 
@@ -256,77 +254,42 @@ async def obtener_id_canal():
 
 
 # ============================================================
-# BOT
+# COMPONENTE DEL BOT
 # ============================================================
 
-class PrecioBot(commands.Bot):
+class PrecioComponent(commands.Component):
 
-    def __init__(
-        self,
-        bot_id: str
-    ):
+    # ========================================================
+    # LISTENER DE MENSAJES
+    # ========================================================
 
-        super().__init__(
-            client_id=TWITCH_CLIENT_ID,
-            client_secret=TWITCH_CLIENT_SECRET,
-            bot_id=bot_id,
-            prefix="!"
-        )
-
-
-    async def setup_hook(self):
+    @commands.Component.listener()
+    async def event_message(self, message):
 
         print(
-            "Obteniendo ID del canal..."
-        )
-
-        broadcaster_id = (
-            await obtener_id_canal()
+            "================================"
         )
 
         print(
-            f"Canal: {TWITCH_CHANNEL}"
+            "MENSAJE RECIBIDO:"
         )
 
         print(
-            f"Broadcaster ID: "
-            f"{broadcaster_id}"
+            message.text
         )
 
         print(
-            f"Bot ID: {self.bot_id}"
-        )
-
-        payload = eventsub.ChatMessageSubscription(
-            broadcaster_user_id=broadcaster_id,
-            user_id=self.bot_id
-        )
-
-        await self.subscribe_websocket(
-            payload=payload
+            f"USUARIO: "
+            f"{message.chatter.name}"
         )
 
         print(
-            "Suscripción al chat creada."
-        )
-
-
-    async def event_ready(self):
-
-        print(
-            "=============================="
+            f"USUARIO ID: "
+            f"{message.chatter.id}"
         )
 
         print(
-            "BOT DE TWITCH CONECTADO"
-        )
-
-        print(
-            f"Canal: {TWITCH_CHANNEL}"
-        )
-
-        print(
-            "=============================="
+            "================================"
         )
 
 
@@ -349,6 +312,14 @@ class PrecioBot(commands.Bot):
         )
 
         try:
+
+            if ctx.message is None:
+
+                print(
+                    "ERROR: ctx.message es None."
+                )
+
+                return
 
             contenido = ctx.message.content
 
@@ -402,8 +373,7 @@ class PrecioBot(commands.Bot):
             try:
 
                 await ctx.send(
-                    "Ha ocurrido un error "
-                    "al buscar el jugador."
+                    "Error al buscar el jugador."
                 )
 
             except Exception as send_error:
@@ -419,9 +389,96 @@ class PrecioBot(commands.Bot):
         )
 
 
-    # ========================================================
-    # ERRORES DE COMANDOS
-    # ========================================================
+# ============================================================
+# BOT
+# ============================================================
+
+class PrecioBot(commands.Bot):
+
+    def __init__(
+        self,
+        bot_id: str
+    ):
+
+        super().__init__(
+            client_id=TWITCH_CLIENT_ID,
+            client_secret=TWITCH_CLIENT_SECRET,
+            bot_id=bot_id,
+            prefix="!"
+        )
+
+
+    async def setup_hook(self):
+
+        print(
+            "Obteniendo ID del canal..."
+        )
+
+        broadcaster_id = (
+            await obtener_id_canal()
+        )
+
+        print(
+            f"Canal: {TWITCH_CHANNEL}"
+        )
+
+        print(
+            f"Broadcaster ID: "
+            f"{broadcaster_id}"
+        )
+
+        print(
+            f"Bot ID: {self.bot_id}"
+        )
+
+        # ----------------------------------------------------
+        # CARGAR COMPONENTE
+        # ----------------------------------------------------
+
+        await self.add_component(
+            PrecioComponent()
+        )
+
+        print(
+            "Componente de precios cargado."
+        )
+
+        # ----------------------------------------------------
+        # SUSCRIPCIÓN AL CHAT
+        # ----------------------------------------------------
+
+        payload = eventsub.ChatMessageSubscription(
+            broadcaster_user_id=broadcaster_id,
+            user_id=self.bot_id
+        )
+
+        await self.subscribe_websocket(
+            payload=payload
+        )
+
+        print(
+            "Suscripción al chat creada."
+        )
+
+
+    async def event_ready(self):
+
+        print(
+            "=============================="
+        )
+
+        print(
+            "BOT DE TWITCH CONECTADO"
+        )
+
+        print(
+            f"Canal: {TWITCH_CHANNEL}"
+        )
+
+        print(
+            "=============================="
+        )
+
 
     async def event_command_error(
         self,
@@ -429,12 +486,20 @@ class PrecioBot(commands.Bot):
     ):
 
         print(
-            "ERROR EN COMANDO:"
+            "================================"
+        )
+
+        print(
+            "ERROR EN COMANDO"
         )
 
         print(
             f"{type(payload).__name__}: "
             f"{payload}"
+        )
+
+        print(
+            "================================"
         )
 
 
