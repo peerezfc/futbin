@@ -5,7 +5,6 @@ import httpx
 from fastapi import FastAPI, Query
 from fastapi.responses import PlainTextResponse
 
-import twitchio
 from twitchio.ext import commands
 from twitchio import eventsub
 
@@ -91,15 +90,10 @@ async def precio(nombre: str = Query(..., min_length=2)):
 
 
 # ============================================================
-# OBTENER ID DEL USUARIO DE TWITCH
+# TWITCH HELIX
 # ============================================================
 
 async def obtener_usuario_twitch():
-    if not TWITCH_ACCESS_TOKEN or not TWITCH_CLIENT_ID:
-        raise RuntimeError(
-            "Faltan TWITCH_ACCESS_TOKEN o TWITCH_CLIENT_ID."
-        )
-
     token = TWITCH_ACCESS_TOKEN.replace("oauth:", "")
 
     async with httpx.AsyncClient(timeout=15.0) as client:
@@ -120,8 +114,39 @@ async def obtener_usuario_twitch():
     return data["user_id"], data.get("login")
 
 
+async def obtener_id_canal():
+    token = TWITCH_ACCESS_TOKEN.replace("oauth:", "")
+
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        response = await client.get(
+            "https://api.twitch.tv/helix/users",
+            params={
+                "login": TWITCH_CHANNEL
+            },
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Client-Id": TWITCH_CLIENT_ID
+            }
+        )
+
+    if response.status_code != 200:
+        raise RuntimeError(
+            f"No se pudo obtener el canal: HTTP {response.status_code} "
+            f"{response.text[:300]}"
+        )
+
+    data = response.json()
+
+    if not data.get("data"):
+        raise RuntimeError(
+            f"No encontré el canal: {TWITCH_CHANNEL}"
+        )
+
+    return data["data"][0]["id"]
+
+
 # ============================================================
-# BOT DE TWITCH
+# BOT
 # ============================================================
 
 class PrecioBot(commands.Bot):
@@ -135,48 +160,41 @@ class PrecioBot(commands.Bot):
         )
 
     async def setup_hook(self):
-        print("Configurando conexión de Twitch...")
 
-        # Buscar el ID del canal
-        canales = [channel async for channel in self.fetch_channels(
-            logins=[TWITCH_CHANNEL]
-        )]
+        print("Obteniendo ID del canal...")
 
-        if not canales:
-            raise RuntimeError(
-                f"No encontré el canal de Twitch: {TWITCH_CHANNEL}"
-            )
+        broadcaster_id = await obtener_id_canal()
 
-        broadcaster_id = canales[0].id
-
-        print(f"Canal encontrado: {TWITCH_CHANNEL}")
+        print(f"Canal: {TWITCH_CHANNEL}")
         print(f"Broadcaster ID: {broadcaster_id}")
         print(f"Bot ID: {self.bot_id}")
 
-        # Suscripción al chat mediante EventSub
         payload = eventsub.ChatMessageSubscription(
             broadcaster_user_id=broadcaster_id,
             user_id=self.bot_id
         )
 
-        await self.subscribe_websocket(payload=payload)
+        await self.subscribe_websocket(
+            payload=payload
+        )
 
         print("Suscripción al chat creada.")
 
 
     async def event_ready(self):
-        print("===================================")
+
+        print("==============================")
         print("BOT DE TWITCH CONECTADO")
         print(f"Canal: {TWITCH_CHANNEL}")
-        print("===================================")
+        print("==============================")
 
 
     @commands.command()
     async def precio(self, ctx: commands.Context):
-        # Ejemplo:
-        # !precio Haaland
 
-        partes = ctx.message.content.split(maxsplit=1)
+        partes = ctx.message.content.split(
+            maxsplit=1
+        )
 
         if len(partes) < 2:
             await ctx.send(
@@ -186,38 +204,36 @@ class PrecioBot(commands.Bot):
 
         nombre = partes[1].strip()
 
+        print(
+            f"Buscando precio para: {nombre}"
+        )
+
         resultado = await buscar_precio(nombre)
 
         await ctx.send(resultado)
 
 
 # ============================================================
-# ARRANCAR TWITCH
+# INICIAR TWITCH
 # ============================================================
 
 async def iniciar_twitch():
 
-    if not TWITCH_ACCESS_TOKEN:
-        print("ERROR: falta TWITCH_ACCESS_TOKEN")
-        return
+    variables = {
+        "TWITCH_ACCESS_TOKEN": TWITCH_ACCESS_TOKEN,
+        "TWITCH_REFRESH_TOKEN": TWITCH_REFRESH_TOKEN,
+        "TWITCH_CLIENT_ID": TWITCH_CLIENT_ID,
+        "TWITCH_CLIENT_SECRET": TWITCH_CLIENT_SECRET,
+        "TWITCH_CHANNEL": TWITCH_CHANNEL
+    }
 
-    if not TWITCH_REFRESH_TOKEN:
-        print("ERROR: falta TWITCH_REFRESH_TOKEN")
-        return
-
-    if not TWITCH_CLIENT_ID:
-        print("ERROR: falta TWITCH_CLIENT_ID")
-        return
-
-    if not TWITCH_CLIENT_SECRET:
-        print("ERROR: falta TWITCH_CLIENT_SECRET")
-        return
-
-    if not TWITCH_CHANNEL:
-        print("ERROR: falta TWITCH_CHANNEL")
-        return
+    for nombre, valor in variables.items():
+        if not valor:
+            print(f"ERROR: falta {nombre}")
+            return
 
     try:
+
         bot_id, login = await obtener_usuario_twitch()
 
         print(f"Usuario asociado al token: {login}")
@@ -225,16 +241,17 @@ async def iniciar_twitch():
 
         bot = PrecioBot(bot_id)
 
-        # Añadir el token de usuario para que TwitchIO
-        # pueda gestionar autenticación y renovación.
         await bot.add_token(
             TWITCH_ACCESS_TOKEN,
             TWITCH_REFRESH_TOKEN
         )
 
-        await bot.start(load_tokens=False)
+        await bot.start(
+            load_tokens=False
+        )
 
     except Exception as e:
+
         print(
             f"ERROR AL CONECTAR TWITCH: "
             f"{type(e).__name__}: {e}"
@@ -247,5 +264,7 @@ async def iniciar_twitch():
 
 @app.on_event("startup")
 async def startup_event():
-    asyncio.create_task(iniciar_twitch())
-    
+
+    asyncio.create_task(
+        iniciar_twitch()
+    )
