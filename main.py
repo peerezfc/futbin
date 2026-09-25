@@ -42,7 +42,9 @@ async def buscar_precio(nombre: str):
 
     try:
 
-        async with httpx.AsyncClient(timeout=20.0) as client:
+        async with httpx.AsyncClient(
+            timeout=20.0
+        ) as client:
 
             response = await client.get(
                 PARSE_API_URL,
@@ -60,8 +62,10 @@ async def buscar_precio(nombre: str):
         )
 
         if response.status_code != 200:
+
             print(
-                f"Respuesta API: {response.text[:500]}"
+                f"Respuesta API: "
+                f"{response.text[:500]}"
             )
 
             return (
@@ -82,10 +86,10 @@ async def buscar_precio(nombre: str):
                 f"No se pudo buscar '{nombre}'."
             )
 
-        results = data.get(
-            "data", {}
-        ).get(
-            "results", []
+        results = (
+            data
+            .get("data", {})
+            .get("results", [])
         )
 
         if not results:
@@ -127,11 +131,13 @@ async def buscar_precio(nombre: str):
             "0"
         )
 
-        return (
+        resultado = (
             f"{name} ({rating}) "
             f"{position} [{version}] "
             f"→ PS: {price_ps} | PC: {price_pc}"
         )
+
+        return resultado
 
     except httpx.RequestError as e:
 
@@ -255,7 +261,10 @@ async def obtener_id_canal():
 
 class PrecioBot(commands.Bot):
 
-    def __init__(self, bot_id: str):
+    def __init__(
+        self,
+        bot_id: str
+    ):
 
         super().__init__(
             client_id=TWITCH_CLIENT_ID,
@@ -328,7 +337,9 @@ class PrecioBot(commands.Bot):
             message.text
         )
 
-        await self.handle_commands(
+        # TwitchIO 3 procesa los comandos
+        # internamente en Bot.event_message().
+        await super().event_message(
             message
         )
 
@@ -343,7 +354,9 @@ class PrecioBot(commands.Bot):
             "COMANDO PRECIO RECIBIDO"
         )
 
-        partes = ctx.message.content.split(
+        contenido = ctx.message.content
+
+        partes = contenido.split(
             maxsplit=1
         )
 
