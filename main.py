@@ -17,23 +17,27 @@ async def precio(nombre: str = Query(..., min_length=2)):
     api_key = os.getenv("FUT_API_KEY")
 
     if not api_key:
-        return "PRUEBA: FUT_API_KEY NO EXISTE EN RAILWAY"
+        return "ERROR: FUT_API_KEY NO EXISTE EN RAILWAY"
 
     try:
         async with httpx.AsyncClient(timeout=20.0) as client:
-
             response = await client.get(
                 PARSE_API_URL,
                 params={"query": nombre.strip()},
                 headers={
-                    "X-API-Key": api_key
+                    "X-API-Key": api_key,
+                    "Accept": "application/json"
                 }
             )
 
         return (
-            f"HTTP: {response.status_code}\n"
-            f"RESPUESTA API:\n{response.text[:2000]}"
+            f"HTTP: {response.status_code}\n\n"
+            f"RESPUESTA DE PARSE.BOT:\n\n"
+            f"{response.text[:5000]}"
         )
 
+    except httpx.RequestError as e:
+        return f"ERROR DE CONEXIÓN: {type(e).__name__}: {str(e)}"
+
     except Exception as e:
-        return f"ERROR: {type(e).__name__} - {str(e)}"
+        return f"ERROR: {type(e).__name__}: {str(e)}"
